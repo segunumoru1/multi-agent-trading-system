@@ -1,5 +1,5 @@
 <!-- omit in toc -->
-# Deep Thinking Trading System with Multi-Agent Collaboration
+# Deep Thinking Multi-Agent Trading System
 
 A Deep Thinking Trading system has many departments, each made up of sub-agents that use logical flows to make smart decisions. For example, an Analyst team gathers data from diverse sources, a Researcher team debates and analyzes this data to form a strategy, and the Execution team refines and approves the trade while working alongside portfolio management, other supporting sub-agents, and more.
 
