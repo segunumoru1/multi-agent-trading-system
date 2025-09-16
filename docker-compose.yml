@@ -1,0 +1,23 @@
+version: "3.9"
+services:
+  app:
+    build: .
+    env_file: .env
+    volumes:
+      - ./:/app
+    command: ["python", "-m", "app.main"]
+    depends_on:
+      - chroma
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./vector_store:/chroma
+  api:
+    build: .
+    environment:
+      - ENV=prod
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

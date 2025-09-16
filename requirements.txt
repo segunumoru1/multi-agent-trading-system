@@ -1,31 +1,59 @@
 # LangChain and LangGraph core components
-langchain
-langgraph
-langchain-openai
-langchain-community
+langchain>=0.0.208
+langgraph>=0.0.208
+langchain-openai>=0.0.208
+langchain-community>=0.0.208
 
 # Foundational libraries for data and LLMs
-openai
-pydantic
-rich
-typing-extensions
+openai>=0.27.8
+pydantic>=2.8.0
+rich>=13.3.5
+typing-extensions>=4.7.1
 
 # Data retrieval and analysis tools
-yfinance
-finnhub-python
-stockstats
-pandas
-requests
+yfinance>=0.2.27
+finnhub-python>=2.5.0
+stockstats>=0.2.0
+pandas>=2.2.0
+requests>=2.31.0
 
 # Web search tool provider
-tavily-python
+tavily-python>=0.1.6
 
 # Vector store for memory
-chromadb
+chromadb>=0.3.24
 
 # Web scraping (often a dependency of other tools)
-beautifulsoup4
+beautifulsoup4>=4.12.2
 
 # For notebook-specific functionality and visualization
-ipython
-pygraphviz
+ipython>=8.16.2
+pygraphviz>=1.11
+
+# CLI & developer tooling
+typer>=0.9.0
+click>=8.1.7
+numpy>=1.26.4
+ruff>=0.0.297
+fastapi>=0.100.0
+uvicorn>=0.23.1
+httpx>=0.23.1
+pytest>=7.4.0
+pytest-asyncio>=0.20.0
+
+# Database and ORM
+sqlalchemy>=2.0.20
+psycopg2>=2.9.6
+
+# Security libraries for authentication and encryption
+cryptography>=45.0.7
+ecdsa>=0.19.1
+python-jose>=3.5.0
+
+# Additional libraries
+prometheus_client==0.22.1
+scipy==1.16.2
+asyncio==4.0.0 
+fastapi_limiter==0.1.6
+redis==7.0.0b1
+passlib==1.7.4

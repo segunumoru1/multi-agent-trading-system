@@ -1,0 +1,16 @@
+.vscode/
+__pycache__/
+*.pyc
+.env
+venv/
+.venv/
+.env.local
+.env.*.local
+.ipynb_checkpoints
+.DS_Store
+.idea/
+*.log
+.mypy_cache/
+.pytest_cache/
+coverage/
+htmlcov/
