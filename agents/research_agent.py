@@ -1,5 +1,5 @@
 from agents.base_agent import BaseAgent
-from core.memory import FinancialSituationMemory
+from core.memory.simple_memory import SimpleMemory
 from typing import Dict, Any
 import logging
 
@@ -20,7 +20,8 @@ class ResearchAgent(BaseAgent):
             News Report: {state['news_report']}
             Fundamentals Report: {state['fundamentals_report']}
             """
-            past_memories = self.memory.get_memories(situation_summary)
+        # Use simple memory instead of vector search
+            past_memories = self.memory.get_recent_memories(3)
             past_memory_str = "\n".join([mem['recommendation'] for mem in past_memories])
             
             if self.role == "bull":

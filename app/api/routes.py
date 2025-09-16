@@ -54,7 +54,11 @@ def analyze(req: AnalyzeRequest):
         )
         
         graph = build_trading_graph(config)
-        final_state = graph.invoke(graph_input)
+        
+        # Use thread_id for checkpointing
+        config_with_checkpoint = {"configurable": {"thread_id": f"analysis_{req.ticker}_{trade_date}"}}
+        
+        final_state = graph.invoke(graph_input, config=config_with_checkpoint)
         
         signal_processor = SignalProcessor(ChatOpenAI(
             model=config["quick_think_llm"],

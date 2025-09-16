@@ -7,11 +7,8 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 from stockstats import wrap as stockstats_wrap
 import os
 import logging
-from tools.options_toolkit import OptionsToolkit
 from tools.economic_calendar_toolkit import EconomicCalendarToolkit
-from tools.alternative_data_toolkit import AlternativeDataToolkit
 from core.cache.redis_cache import cached_yfinance_data
-from tools.portfolio_optimization_toolkit import PortfolioOptimizationToolkit
 
 logger = logging.getLogger(__name__)
 tavily_tool = TavilySearchResults(max_results=3)
@@ -97,16 +94,7 @@ class Toolkit:
         self.get_social_media_sentiment = get_social_media_sentiment
         self.get_fundamental_analysis = get_fundamental_analysis
         self.get_macroeconomic_news = get_macroeconomic_news
-        self.options_toolkit = OptionsToolkit(config)
-        self.get_options_chain = self.options_toolkit.get_options_chain
-        self.analyze_options_sentiment = self.options_toolkit.analyze_options_sentiment
         self.economic_toolkit = EconomicCalendarToolkit(config)
         self.get_economic_events = self.economic_toolkit.get_economic_events
         self.get_fed_speeches = self.economic_toolkit.get_fed_speeches
-        self.alternative_toolkit = AlternativeDataToolkit(config)
-        self.get_satellite_imagery_data = self.alternative_toolkit.get_satellite_imagery_data
-        self.get_credit_card_spending_data = self.alternative_toolkit.get_credit_card_spending_data
-        self.get_web_traffic_data = self.alternative_toolkit.get_web_traffic_data
-        self.portfolio_toolkit = PortfolioOptimizationToolkit(config)
-        self.optimize_portfolio = self.portfolio_toolkit.optimize_portfolio
-        self.calculate_portfolio_risk_metrics = self.portfolio_toolkit.calculate_portfolio_risk_metrics
+        self.get_economic_indicators = self.economic_toolkit.get_economic_indicators

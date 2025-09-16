@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
-from langchain_core.messages import RemoveMessage
+from langchain_core.messages import RemoveMessage, HumanMessage
 from core.models import AgentState
 from agents.market_analyst import MarketAnalyst
 from agents.social_analyst import SocialAnalyst
@@ -10,12 +10,13 @@ from agents.research_agent import ResearchAgent
 from agents.execution_agent import ExecutionAgent
 from agents.risk_agent import RiskAgent
 from agents.portfolio_manager import PortfolioManager
-from core.memory import FinancialSituationMemory
+from core.memory.simple_memory import SimpleMemory  # Correct import
 from tools.toolkit import Toolkit
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import MessagesPlaceholder
 from langchain_openai import ChatOpenAI
-import os
+from core.checkpoint.postgres_checkpoint import get_postgres_checkpoint
+from config import settings  # Use centralized config
 import logging
 
 logger = logging.getLogger(__name__)
@@ -63,30 +64,35 @@ def create_research_manager(llm, memory):
             return {"investment_plan": f"Error generating investment plan: {e}"}
     return research_manager_node
 
-def build_trading_graph(config):
+def build_trading_graph():
     try:
-        # Initialize LLMs
+        # Use centralized settings instead of config parameter
+        config = settings
+        
+        # Initialize LLMs using settings
         deep_thinking_llm = ChatOpenAI(
-            model=config["deep_think_llm"],
-            base_url=config["backend_url"],
-            temperature=0.1
+            model=config.deep_think_llm,
+            base_url=config.backend_url,
+            temperature=0.1,
+            api_key=config.openai_api_key
         )
         
         quick_thinking_llm = ChatOpenAI(
-            model=config["quick_think_llm"],
-            base_url=config["backend_url"],
-            temperature=0.1
+            model=config.quick_think_llm,
+            base_url=config.backend_url,
+            temperature=0.1,
+            api_key=config.openai_api_key
         )
         
-        # Initialize toolkit
-        toolkit = Toolkit(config)
+        # Initialize toolkit with settings
+        toolkit = Toolkit(config.__dict__)
         
-        # Initialize memories
-        bull_memory = FinancialSituationMemory("bull_memory", config)
-        bear_memory = FinancialSituationMemory("bear_memory", config)
-        trader_memory = FinancialSituationMemory("trader_memory", config)
-        invest_judge_memory = FinancialSituationMemory("invest_judge_memory", config)
-        risk_manager_memory = FinancialSituationMemory("risk_manager_memory", config)
+        # Initialize memories using SimpleMemory (correct class)
+        bull_memory = SimpleMemory("bull_memory")
+        bear_memory = SimpleMemory("bear_memory")
+        trader_memory = SimpleMemory("trader_memory")
+        invest_judge_memory = SimpleMemory("invest_judge_memory")
+        risk_manager_memory = SimpleMemory("risk_manager_memory")
         
         # Create analyst nodes
         market_analyst_system_message = "You are a trading assistant specialized in analyzing financial markets. Your role is to select the most relevant technical indicators to analyze a stock's price action, momentum, and volatility. You must use your tools to get historical data and then generate a report with your findings, including a summary table."
@@ -171,7 +177,11 @@ def build_trading_graph(config):
         workflow.add_edge("tools", "News Analyst")
         workflow.add_edge("tools", "Fundamentals Analyst")
         
-        return workflow.compile()
+        # Compile with checkpointing
+        checkpointer = get_postgres_checkpoint()
+        compiled_graph = workflow.compile(checkpointer=checkpointer)
+        
+        return compiled_graph
     except Exception as e:
         logger.error(f"Error building trading graph: {e}")
         raise

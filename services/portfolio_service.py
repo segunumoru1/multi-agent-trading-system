@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from decimal import Decimal
 from datetime import datetime
 from core.db.connection import get_db
@@ -346,3 +346,29 @@ class PortfolioService:
                     updated_cash -= buy_value
         
         return trades_to_execute
+    
+    def update_position(self, trade_details: Dict[str, Any]) -> bool:
+        """Update portfolio position based on trade details."""
+        try:
+            symbol = trade_details.get('symbol')
+            action = trade_details.get('action')
+            quantity = trade_details.get('quantity', 0)
+            price = trade_details.get('price', 0)
+            commission = trade_details.get('commission', 0)
+            
+            if not symbol or not action:
+                return False
+            
+            # Execute the trade
+            trade_record = self.execute_trade(
+                symbol=symbol,
+                action=action,
+                quantity=quantity,
+                price=price,
+                commission=commission
+            )
+            
+            return trade_record is not None
+        except Exception as e:
+            logger.error(f"Error updating position: {e}")
+            return False

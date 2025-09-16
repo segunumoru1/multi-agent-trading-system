@@ -4,6 +4,9 @@ langgraph>=0.0.208
 langchain-openai>=0.0.208
 langchain-community>=0.0.208
 
+# LangGraph checkpointing
+langgraph-checkpoint-postgres>=0.1.0
+
 # Foundational libraries for data and LLMs
 openai>=0.27.8
 pydantic>=2.8.0
@@ -57,3 +60,7 @@ asyncio==4.0.0
 fastapi_limiter==0.1.6
 redis==7.0.0b1
 passlib==1.7.4
+
+# Streaming libraries
+polygon-api-client==1.15.3
+websockets==14.2

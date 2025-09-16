@@ -1,95 +1,132 @@
-import asyncio
-import json
-import websockets
+"""
+WebSocket client for real-time market data streaming.
+This is a basic implementation that can be extended with actual WebSocket connections.
+"""
+from typing import List, Dict, Any, Callable, Optional
 import logging
-from typing import Callable, Dict, List, Optional
-from datetime import datetime
+import asyncio
+import time
+import random
 
 logger = logging.getLogger(__name__)
 
 class MarketDataStream:
-    """Real-time market data stream using WebSockets."""
+    """WebSocket client for streaming market data."""
     
-    def __init__(self, symbols: List[str], api_key: str):
-        self.symbols = symbols
-        self.api_key = api_key
-        self.ws = None
-        self.callbacks = []
-        self.running = False
-        self.last_prices = {}  # Cache of last prices for each symbol
-        
-    async def connect(self):
-        """Connect to the WebSocket endpoint."""
-        # Using Finnhub as an example - replace with your preferred data provider
-        uri = f"wss://ws.finnhub.io?token={self.api_key}"
-        
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.callbacks: List[Callable] = []
+        self.is_streaming = False
+        self.stream_task: Optional[asyncio.Task] = None
+        self.symbols: List[str] = []
+    
+    def register_callback(self, callback: Callable[[Dict[str, Any]], None]):
+        """Register a callback for market data updates."""
+        self.callbacks.append(callback)
+        logger.info(f"Registered callback: {callback.__name__}")
+    
+    def unregister_callback(self, callback: Callable[[Dict[str, Any]], None]):
+        """Unregister a callback."""
+        if callback in self.callbacks:
+            self.callbacks.remove(callback)
+            logger.info(f"Unregistered callback: {callback.__name__}")
+    
+    def start_stream(self, symbols: List[str]) -> bool:
+        """Start streaming market data for specified symbols."""
         try:
-            self.ws = await websockets.connect(uri)
-            self.running = True
-            logger.info(f"Connected to market data stream")
+            if self.is_streaming:
+                logger.warning("Stream already running")
+                return True
             
-            # Subscribe to ticker data for all symbols
-            for symbol in self.symbols:
-                await self.ws.send(json.dumps({"type": "subscribe", "symbol": symbol}))
-                logger.info(f"Subscribed to {symbol}")
+            self.symbols = symbols
+            self.is_streaming = True
             
-            # Start the message handler
-            asyncio.create_task(self._message_handler())
+            # Start the streaming task
+            self.stream_task = asyncio.create_task(self._stream_data())
+            
+            logger.info(f"Started streaming for symbols: {symbols}")
+            return True
             
         except Exception as e:
-            logger.error(f"Error connecting to market data stream: {e}")
-            self.running = False
+            logger.error(f"Failed to start stream: {e}")
+            return False
     
-    async def _message_handler(self):
-        """Handle incoming messages from the WebSocket."""
-        while self.running and self.ws:
+    def stop_stream(self):
+        """Stop the streaming."""
+        try:
+            self.is_streaming = False
+            if self.stream_task:
+                self.stream_task.cancel()
+                self.stream_task = None
+            logger.info("Stopped streaming")
+        except Exception as e:
+            logger.error(f"Error stopping stream: {e}")
+    
+    async def _stream_data(self):
+        """Simulate streaming market data (replace with real WebSocket implementation)."""
+        logger.info("Starting simulated market data stream")
+        
+        while self.is_streaming:
             try:
-                message = await self.ws.recv()
-                data = json.loads(message)
+                # Simulate market data updates
+                for symbol in self.symbols:
+                    # Generate mock price data
+                    price_change = random.uniform(-0.02, 0.02)  # -2% to +2%
+                    base_price = self._get_base_price(symbol)
+                    new_price = base_price * (1 + price_change)
+                    
+                    update = {
+                        'symbol': symbol,
+                        'price': round(new_price, 2),
+                        'timestamp': time.time(),
+                        'volume': random.randint(1000, 10000),
+                        'change_percent': round(price_change * 100, 2)
+                    }
+                    
+                    # Notify all callbacks
+                    for callback in self.callbacks:
+                        try:
+                            callback(update)
+                        except Exception as e:
+                            logger.error(f"Error in callback {callback.__name__}: {e}")
                 
-                # Process the data
-                if data.get("type") == "trade":
-                    for trade in data.get("data", []):
-                        symbol = trade.get("s")
-                        price = trade.get("p")
-                        timestamp = trade.get("t")
-                        volume = trade.get("v")
-                        
-                        # Update last known price
-                        self.last_prices[symbol] = price
-                        
-                        # Create a price update event
-                        event = {
-                            "symbol": symbol,
-                            "price": price,
-                            "timestamp": datetime.fromtimestamp(timestamp / 1000),
-                            "volume": volume
-                        }
-                        
-                        # Notify all callbacks
-                        for callback in self.callbacks:
-                            callback(event)
-            
-            except websockets.exceptions.ConnectionClosed:
-                logger.warning("WebSocket connection closed")
-                self.running = False
+                # Wait before next update (simulate real-time delay)
+                await asyncio.sleep(1)  # 1 second delay
+                
+            except asyncio.CancelledError:
+                logger.info("Streaming task cancelled")
                 break
             except Exception as e:
-                logger.error(f"Error handling WebSocket message: {e}")
+                logger.error(f"Error in streaming loop: {e}")
+                await asyncio.sleep(5)  # Wait before retry
     
-    def register_callback(self, callback: Callable):
-        """Register a callback function to receive price updates."""
-        self.callbacks.append(callback)
-        
-    def get_last_price(self, symbol: str) -> Optional[float]:
-        """Get the last known price for a symbol."""
-        return self.last_prices.get(symbol)
+    def _get_base_price(self, symbol: str) -> float:
+        """Get base price for a symbol (mock implementation)."""
+        # Mock base prices - replace with real data source
+        base_prices = {
+            'AAPL': 150.0,
+            'MSFT': 300.0,
+            'NVDA': 400.0,
+            'GOOGL': 2500.0,
+            'TSLA': 200.0
+        }
+        return base_prices.get(symbol, 100.0)
     
-    async def disconnect(self):
-        """Disconnect from the WebSocket."""
-        self.running = False
-        if self.ws:
-            for symbol in self.symbols:
-                await self.ws.send(json.dumps({"type": "unsubscribe", "symbol": symbol}))
-            await self.ws.close()
-            logger.info("Disconnected from market data stream")
+    def get_latest_data(self, symbol: str) -> Dict[str, Any]:
+        """Get the latest data for a symbol."""
+        # Mock implementation - replace with real data retrieval
+        return {
+            'symbol': symbol,
+            'price': self._get_base_price(symbol),
+            'timestamp': time.time(),
+            'volume': random.randint(1000, 10000)
+        }
+    
+    def is_connected(self) -> bool:
+        """Check if the stream is connected."""
+        return self.is_streaming
+
+# Factory function for creating stream instances
+def create_market_stream(config: Dict[str, Any]) -> MarketDataStream:
+    """Create a new market data stream instance."""
+    return MarketDataStream(config)

@@ -12,18 +12,197 @@ import math
 
 @dataclass
 class BacktestResult:
-    equity_curve: pd.Series
-    trades: List[Dict[str, Any]]
-    sharpe: float
+    total_return: float
+    sharpe_ratio: float
     max_drawdown: float
-    total_commission: float = 0.0
-    total_slippage_cost: float = 0.0
-    total_notional: float = 0.0
-    total_trades: int = 0
-    average_cost_bps: float = 0.0  # (commission+slip)/notional * 1e4
-    gross_exposure_peak: float = 0.0
+    total_trades: int
+    win_rate: float
+    final_portfolio_value: float
 
 
+class BacktestService:
+    """Backtesting service for evaluating trading strategies."""
+    
+    def __init__(self, config: dict):
+        self.config = config
+    
+    def run_backtest(self, strategy_results: Dict[str, Any], 
+                    start_date: str, end_date: str) -> Dict[str, Any]:
+        """Run comprehensive backtest on strategy results."""
+        try:
+            # Extract orders from strategy results
+            orders = strategy_results.get('orders', [])
+            price_data = strategy_results.get('price_data', {})
+            
+            if not orders or not price_data:
+                return {"error": "Missing orders or price data"}
+            
+            # Run the backtest
+            result = self.backtest(
+                price_df=pd.DataFrame(price_data),
+                orders=orders,
+                commission_pct=self.config.get('commission_pct', 0.0005),
+                slippage_bps=self.config.get('slippage_bps', 5)
+            )
+            
+            return {
+                "total_return": result.total_return,
+                "sharpe_ratio": result.sharpe_ratio,
+                "max_drawdown": result.max_drawdown,
+                "total_trades": result.total_trades,
+                "win_rate": result.win_rate,
+                "final_portfolio_value": result.final_portfolio_value
+            }
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def backtest(self,
+                price_df: pd.DataFrame,
+                orders: List[Dict[str, Any]],
+                commission_pct: float = 0.0005,
+                slippage_bps: int = 5,
+                participation_cap: Optional[float] = None,
+                base_spread_bps: int = 2,
+                impact_coef: float = 0.0,
+                impact_model: str = 'linear',
+                impact_power: float = 0.5) -> BacktestResult:
+        """Backtest a list of orders against historical price data."""
+        if price_df.empty or 'Close' not in price_df.columns:
+            raise ValueError("price_df must contain Close column")
+        # Normalize index to datetime
+        price_df = price_df.copy()
+        if not isinstance(price_df.index, pd.DatetimeIndex):
+            if 'Date' in price_df.columns:
+                price_df = price_df.set_index(pd.to_datetime(price_df['Date']))
+            else:
+                raise ValueError("price_df must have a DatetimeIndex or a 'Date' column")
+
+        position = 0
+        cash = 100000.0
+        trades: List[Dict[str, Any]] = []
+        equity_values = []
+        slip = slippage_bps / 10000.0
+        gross_exposure_peak = 0.0
+        cumulative_participation = 0.0  # fraction of cumulative volume we've represented
+        cum_volume = 0.0
+        for date, row in price_df.iterrows():
+            bar_volume = float(row.get('Volume', 1.0)) if participation_cap else None
+            # Execute any orders for this date (toy: all at same symbol)
+            todays_orders: List[Dict[str, Any]] = []
+            for o in orders:
+                ts_val = o.get('timestamp')
+                if ts_val is None:
+                    continue
+                try:
+                    o_dt = pd.to_datetime(ts_val)
+                except Exception:  # noqa: BLE001
+                    continue
+                if o_dt <= date:
+                    todays_orders.append(o)
+            for o in todays_orders:
+                if o.get('_executed'):
+                    continue
+                side = o['side']
+                original_qty = int(o['qty'])
+                remaining = int(o.get('_remaining', original_qty))
+                # Partial fill sizing
+                if participation_cap and bar_volume and bar_volume > 0:
+                    max_bar_qty = max(1, int(bar_volume * participation_cap))
+                    fill_qty = min(remaining, max_bar_qty)
+                else:
+                    fill_qty = remaining
+                price = float(row['Close'])
+                # Include base spread if partial fill mode enabled
+                spread_adj = 0.0
+                if participation_cap:
+                    spread_adj = (base_spread_bps / 10000.0) * price * (1 if side == 'BUY' else -1)
+                effective_price = price + spread_adj
+                effective_price = effective_price * (1 + slip) if side == 'BUY' else effective_price * (1 - slip)
+                # Track cumulative volume (if volume present)
+                if bar_volume and bar_volume > 0:
+                    cum_volume += bar_volume
+                impact = 0.0
+                prev_abs_qty = 0.0
+                if impact_coef > 0 and cum_volume > 0:
+                    prev_abs_qty = cumulative_participation * cum_volume
+                    prospective_participation = (prev_abs_qty + fill_qty) / cum_volume
+                    if impact_model == 'sqrt':
+                        scale = prospective_participation ** 0.5
+                    elif impact_model == 'power':
+                        scale = prospective_participation ** max(1e-6, impact_power)
+                    else:  # linear
+                        scale = prospective_participation
+                    impact = impact_coef * scale * price
+                    effective_price = effective_price + (impact if side == 'BUY' else -impact)
+                notional = fill_qty * effective_price
+                commission = notional * commission_pct
+                if side == 'BUY':
+                    cash -= notional + commission
+                    position += fill_qty
+                else:  # SELL
+                    cash += notional - commission
+                    position -= fill_qty
+                remaining_after = remaining - fill_qty
+                if remaining_after > 0:
+                    o['_remaining'] = remaining_after
+                else:
+                    o['_executed'] = True
+                trades.append({
+                    'date': date,
+                    'side': side,
+                    'qty': fill_qty,
+                    'price': price,
+                    'effective_price': effective_price,
+                    'commission': commission,
+                    'slippage_bps': slippage_bps,
+                    'remaining': max(0, remaining_after),
+                    'original_qty': original_qty,
+                    'impact_applied': impact,
+                    'position_after': position,
+                    'cash_after': cash,
+                })
+                # Update cumulative participation after applying fill
+                if bar_volume and bar_volume > 0 and cum_volume > 0:
+                    cumulative_participation = min(1.0, (prev_abs_qty + fill_qty) / cum_volume)
+            # Mark-to-market
+            mtm = position * float(row['Close'])
+            equity = cash + mtm
+            equity_values.append((date, equity))
+            gross_exposure_peak = max(gross_exposure_peak, abs(position) * float(row['Close']))
+
+        equity_series = pd.Series([v for _, v in equity_values], index=[d for d, _ in equity_values])
+        returns = equity_series.pct_change().dropna()
+        sharpe = _compute_sharpe(returns)
+        max_dd = _compute_max_drawdown(equity_series)
+        total_commission = sum(t.get('commission', 0.0) for t in trades)
+        # Slippage cost per trade approximated as difference between effective and mid (here close) * qty
+        total_slip_cost = 0.0
+        for t in trades:
+            px = t.get('price')
+            epx = t.get('effective_price')
+            qty = t.get('qty', 0)
+            if px is not None and epx is not None:
+                # For buys effective > price (cost), for sells effective < price (cost as price-epx)
+                if t.get('side') == 'BUY':
+                    total_slip_cost += (epx - px) * qty
+                else:
+                    total_slip_cost += (px - epx) * qty
+        total_notional = sum((t.get('effective_price', 0.0) or 0.0) * t.get('qty', 0) for t in trades)
+        total_trades = len(trades)
+        avg_cost_bps = 0.0
+        if total_notional > 0:
+            avg_cost_bps = ((total_commission + total_slip_cost) / total_notional) * 10000.0
+        return BacktestResult(
+            total_return=returns.sum(),
+            sharpe_ratio=sharpe,
+            max_drawdown=max_dd,
+            total_trades=total_trades,
+            win_rate=len([t for t in trades if t['side'] == 'SELL' and t.get('remaining', 0) == 0]) / total_trades if total_trades > 0 else 0.0,
+            final_portfolio_value=equity_series.iloc[-1] if not equity_series.empty else 0.0,
+        )
+
+
+# Keep existing standalone functions for backward compatibility
 def _compute_sharpe(returns: pd.Series, risk_free: float = 0.0) -> float:
     if returns.empty:
         return 0.0
@@ -186,16 +365,12 @@ def backtest(
     if total_notional > 0:
         avg_cost_bps = ((total_commission + total_slip_cost) / total_notional) * 10000.0
     return BacktestResult(
-        equity_curve=equity_series,
-        trades=trades,
-        sharpe=sharpe,
+        total_return=returns.sum(),
+        sharpe_ratio=sharpe,
         max_drawdown=max_dd,
-        total_commission=total_commission,
-        total_slippage_cost=total_slip_cost,
-        total_notional=total_notional,
         total_trades=total_trades,
-        average_cost_bps=avg_cost_bps,
-        gross_exposure_peak=gross_exposure_peak,
+        win_rate=len([t for t in trades if t['side'] == 'SELL' and t.get('remaining', 0) == 0]) / total_trades if total_trades > 0 else 0.0,
+        final_portfolio_value=equity_series.iloc[-1] if not equity_series.empty else 0.0,
     )
 
 
@@ -371,17 +546,13 @@ def multi_backtest(
     if total_notional > 0:
         avg_cost_bps = ((total_commission + total_slip_cost) / total_notional) * 10000.0
     return BacktestResult(
-        equity_curve=equity_series,
-        trades=trades,
-        sharpe=sharpe,
+        total_return=returns.sum(),
+        sharpe_ratio=sharpe,
         max_drawdown=max_dd,
-        total_commission=total_commission,
-        total_slippage_cost=total_slip_cost,
-        total_notional=total_notional,
         total_trades=total_trades,
-        average_cost_bps=avg_cost_bps,
-        gross_exposure_peak=gross_exposure_peak,
+        win_rate=len([t for t in trades if t['side'] == 'SELL' and t.get('remaining', 0) == 0]) / total_trades if total_trades > 0 else 0.0,
+        final_portfolio_value=equity_series.iloc[-1] if not equity_series.empty else 0.0,
     )
 
 
-__all__ = ["backtest", "multi_backtest", "BacktestResult"]
+__all__ = ["BacktestService", "BacktestResult", "backtest", "_compute_sharpe", "_compute_max_drawdown"]
